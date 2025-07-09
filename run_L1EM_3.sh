@@ -19,7 +19,7 @@
 # Usage: bash run_L1EM.sh /fullpathto/alignments.bam /fullpathto/L1EM /fullpathto/hg38.fa
 
 # Parameters
-threads=16 #How many threads to use for samtools, bwa and L1EM
+threads=12 #How many threads to use for samtools, bwa and L1EM
 realignNM=3 #Number of mismatches allowed in bwa realignment
 L1EM_NM=3 # Number of mismatches allowed when enumerated candidate alignments
 NMdiff=2 #Skip candidate alignments with greater than this many more mismatches than the best alignment
@@ -33,45 +33,60 @@ template_fraction=1 #Fraction of reads to consider when calculated median templa
 # If you need to specify paths to required packages
 bwa=$(which bwa) # version 0.7.17 tested
 samtools=$(which samtools) # version 1.9 tested
-python=$(which python) # use version 2.7
+#python=$(which python) # use version 2.7
+# Force python 3
+python=$(which python3)
+python3=$(which python3)
 
 # Command line arguments
 bamfile=$1
 L1EM_directory=$2
 hg38=$3
 
-L1EM_bed=$L1EM_directory'/annotation/ensemblannot/L1EM_ensembl.400.bed'
-L1EM_fa=$L1EM_directory'/annotation/ensemblannot/L1EM_ensembl.400.fa'
+L1EM_bed=$L1EM_directory'/annotation/ensemblannot/L1EM_ensembl.400.noY.bed'
+L1EM_fa=$L1EM_directory'/annotation/ensemblannot/L1EM_ensembl.400.noY.fa'
 L1EM_code_dir=$L1EM_directory'/L1EM/'
 L1EM_utilities_dir=$L1EM_directory'/utilities/'
 L1EM_CGC_dir=$L1EM_directory'/CGC/'
 
 # Try to realign unaligned reads using bwa aln.
 echo 'STEP 1: realign'
-mkdir idL1reads
+mkdir -p idL1reads
 cd idL1reads
-$samtools view -@ $threads -b -F 2 $bamfile | $samtools sort -@ $threads -n - | $samtools fastq - -1 unaligned.fq1 -2 unaligned.fq2
-$bwa aln -k $realignNM -n $realignNM -t $threads -i $bwa_i $hg38 unaligned.fq1 > 1.sai
-$bwa aln -k $realignNM -n $realignNM -t $threads -i $bwa_i $hg38 unaligned.fq2 > 2.sai
-$bwa sampe $hg38 1.sai 2.sai unaligned.fq1 unaligned.fq2 | $samtools view -b -@ $threads - | $samtools sort -@ $threads - > realigned.bam 
-samtools index realigned.bam
+if [ ! -f "unaligned.fq1" ]; then
+    $samtools view -@ $threads -b -F 2 $bamfile | $samtools sort -@ $threads -n - | $samtools fastq - -1 unaligned.fq1 -2 unaligned.fq2
+fi
+if [ ! -f "1.sai" ]; then
+    $bwa aln -k $realignNM -n $realignNM -t $threads -i $bwa_i $hg38 unaligned.fq1 > 1.sai
+fi
+if [ ! -f "2.sai" ]; then
+    $bwa aln -k $realignNM -n $realignNM -t $threads -i $bwa_i $hg38 unaligned.fq2 > 2.sai
+fi
+if [ ! -f "realigned.bam" ]; then
+    $bwa sampe $hg38 1.sai 2.sai unaligned.fq1 unaligned.fq2 | $samtools view -b -@ $threads - | $samtools sort -@ $threads - > realigned.bam
+    samtools index realigned.bam
+fi
 
 # Extract L1HS/L1PA* aligning reads.
 echo 'STEP 2: extract'
-$python ${L1EM_utilities_dir}read_or_pair_overlap_bed.py $L1EM_bed $bamfile temp.bam
-$samtools sort -@ $threads -n temp.bam | $samtools fastq - -1 L1.fq1 -2 L1.fq2
-$python ${L1EM_utilities_dir}read_or_pair_overlap_bed.py $L1EM_bed realigned.bam temp.bam
-$samtools sort -@ $threads -n temp.bam | $samtools fastq - -1 temp.fq1 -2 temp.fq2
-cat temp.fq1 >> L1.fq1
-cat temp.fq2 >> L1.fq2
-# rm temp*
+if [ ! -f "L1.fq1" ]; then
+    $python ${L1EM_utilities_dir}read_or_pair_overlap_bed.py $L1EM_bed $bamfile temp.bam
+    $samtools sort -@ $threads -n temp.bam | $samtools fastq - -1 L1.fq1 -2 L1.fq2
+    $python ${L1EM_utilities_dir}read_or_pair_overlap_bed.py $L1EM_bed realigned.bam temp.bam
+    $samtools sort -@ $threads -n temp.bam | $samtools fastq - -1 temp.fq1 -2 temp.fq2
+    cat temp.fq1 >> L1.fq1
+    cat temp.fq2 >> L1.fq2
+fi
+## rm temp*
 
 # Split the L1 fastq files for parallel execution
 cd ..
-mkdir split_fqs
-split_fq_size=$(wc -l idL1reads/L1.fq1 | awk '{print $1/('$threads'*4)+1}' | cut -d '.' -f 1 | awk '{print $1*4}')
-split -l $split_fq_size idL1reads/L1.fq1 split_fqs/L1.fq1.
-split -l $split_fq_size idL1reads/L1.fq2 split_fqs/L1.fq2.
+mkdir -p split_fqs
+if [ ! -f "split_fqs/L1.fq2.ap" ]; then
+    split_fq_size=$(wc -l idL1reads/L1.fq1 | awk '{print $1/('$threads'*4)+1}' | cut -d '.' -f 1 | awk '{print $1*4}')
+    split -l $split_fq_size idL1reads/L1.fq1 split_fqs/L1.fq1.
+    split -l $split_fq_size idL1reads/L1.fq2 split_fqs/L1.fq2.
+fi
 cd split_fqs
 
 # Generate candidate alignments
@@ -81,37 +96,44 @@ for name in *.fq1.*
     reads2=$(echo $name|sed 's/fq1/fq2/g')
     ref=$L1EM_fa
     base=$(echo $name|sed 's/.fq1//g')
-    $bwa aln -t $threads -N -n $L1EM_NM -k $L1EM_NM -i $bwa_i -R 10000000 $ref $reads1 > $base.R1.aln.sai
-    $bwa aln -t $threads -N -n $L1EM_NM -k $L1EM_NM -i $bwa_i -R 10000000 $ref $reads2 >  $base.R2.aln.sai
+    if [ ! -f "$base.R1.aln.sai" ]; then
+        $bwa aln -t $threads -N -n $L1EM_NM -k $L1EM_NM -i $bwa_i -R 10000000 $ref $reads1 > $base.R1.aln.sai
+    fi
+    if [ ! -f "$base.R2.aln.sai" ]; then
+        $bwa aln -t $threads -N -n $L1EM_NM -k $L1EM_NM -i $bwa_i -R 10000000 $ref $reads2 >  $base.R2.aln.sai
+    fi
 done
 for name in *.fq1.*
     do reads1=$name
     reads2=$(echo $name|sed 's/fq1/fq2/g')
     ref=$L1EM_fa
     base=$(echo $name|sed 's/.fq1//g')
-    $bwa sampe -n 10000000 -N 10000000 $ref $base.R1.aln.sai  $base.R2.aln.sai $reads1 $reads2 | $samtools view -bS - | $samtools sort -n - > $base.aln.bam &
+    if [ ! -f "$base.aln.bam" ]; then
+        $bwa sampe -n 10000000 -N 10000000 $ref $base.R1.aln.sai  $base.R2.aln.sai $reads1 $reads2 | $samtools view -bS - | $samtools sort -n - > $base.aln.bam &
+    fi
 done
 wait
 
 # Make G_of_R matrix
 echo 'STEP 4: G(R) matrix construction'
-mkdir ../G_of_R
+mkdir -p ../G_of_R
 cd ../G_of_R
-$python ${L1EM_CGC_dir}median_template_and_pairs.py $bamfile 0.001 > ../baminfo.txt
-medianinsert=$(head -1 ../baminfo.txt)
-for bam in ../split_fqs/*.bam
-	do $python ${L1EM_code_dir}G_of_R.py -b ../split_fqs/$bam -i $medianinsert -p $(echo $bam| cut -d '/' -f 3) -e $error_prob -m $max_start2start_len -r $reads_per_pickle -n $NMdiff &
-done
-wait
+if [ ! -f "../baminfo.txt" ]; then
+    $python ${L1EM_CGC_dir}median_template_and_pairs.py $bamfile 0.001 > ../baminfo.txt
+    medianinsert=$(head -1 ../baminfo.txt)
+    for bam in ../split_fqs/*.bam
+        do $python ${L1EM_code_dir}G_of_R.py -b ../split_fqs/$bam -i $medianinsert -p $(echo $bam| cut -d '/' -f 3) -e $error_prob -m $max_start2start_len -r $reads_per_pickle -n $NMdiff &
+    done
+    wait
+fi
 
 # RUN EM
 echo 'STEP 5: Expectation maximization'
-mkdir ../L1EM/
+mkdir -p ../L1EM/
 cd ../L1EM/
 ls ../G_of_R/*pk2 > G_of_R_list.txt
 cp $(ls ../G_of_R/*TE_list.txt | head -1) TE_list.txt
-python ${L1EM_code_dir}L1EM.py -g G_of_R_list.txt -l TE_list.txt -t $threads -s $EM_threshold
-
+python3 ${L1EM_code_dir}L1EM_trial.py -g G_of_R_list.txt -l TE_list.txt -t $threads -s $EM_threshold --method vb --vb_steps 10
 #Write results as text file
 echo 'STEP 6: Writing results'
 
