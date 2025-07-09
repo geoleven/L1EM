@@ -133,7 +133,7 @@ mkdir -p ../L1EM/
 cd ../L1EM/
 ls ../G_of_R/*pk2 > G_of_R_list.txt
 cp $(ls ../G_of_R/*TE_list.txt | head -1) TE_list.txt
-python3 ${L1EM_code_dir}L1EM_trial.py -g G_of_R_list.txt -l TE_list.txt -t $threads -s $EM_threshold --method vb --vb_steps 10
+python3 ${L1EM_code_dir}L1EM_trial.py -g G_of_R_list.txt -l TE_list.txt -t $threads -s $EM_threshold #--method vb --vb_steps 10
 #Write results as text file
 echo 'STEP 6: Writing results'
 
