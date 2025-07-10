@@ -43,8 +43,8 @@ bamfile=$1
 L1EM_directory=$2
 hg38=$3
 
-L1EM_bed=$L1EM_directory'/annotation/ensemblannot/L1EM_ensembl.400.noY.bed'
-L1EM_fa=$L1EM_directory'/annotation/ensemblannot/L1EM_ensembl.400.noY.fa'
+L1EM_bed=$L1EM_directory'/annotation/L1EM_ensembl.400.ens.noY.bed'
+L1EM_fa=$L1EM_directory'/annotation/L1EM_ensembl.400.ens.noY.fa'
 L1EM_code_dir=$L1EM_directory'/L1EM/'
 L1EM_utilities_dir=$L1EM_directory'/utilities/'
 L1EM_CGC_dir=$L1EM_directory'/CGC/'
