@@ -39,9 +39,9 @@ python=$(which python3)
 python3=$(which python3)
 
 # Command line arguments
-bamfile=$1
-L1EM_directory=$2
-hg38=$3
+bamfile=$(realpath $1)
+L1EM_directory=$(realpath $2)
+hg38=$(realpath $3)
 
 L1EM_bed=$L1EM_directory'/annotation/L1EM_ensembl.400.ens.noY.bed'
 L1EM_fa=$L1EM_directory'/annotation/L1EM_ensembl.400.ens.noY.fa'
